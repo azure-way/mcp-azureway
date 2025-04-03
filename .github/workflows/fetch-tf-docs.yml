@@ -1,0 +1,104 @@
+name: Fetch and Upload Terraform AzureRM Docs
+on:
+  schedule:
+    - cron: '0 1 * * *' # Runs at 1 AM UTC daily
+  workflow_dispatch: # Allow manual triggering
+
+permissions:
+  id-token: write # Required for OIDC authentication
+  contents: read # Required for GitHub API access
+
+jobs:
+  fetch_and_upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch and process Terraform AzureRM docs
+        env:
+          STORAGE_ACCOUNT: mcpserverazurway
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e # Exit immediately on error
+
+          # Get existing versions from container metadata
+          echo "Checking existing versions from container metadata..."
+          existing_versions=$(az storage container list \
+            --account-name $STORAGE_ACCOUNT \
+            --query "[?starts_with(name, 'terraform-azure/v')].metadata.version" \
+            --output tsv)
+
+          # Get all releases from GitHub API
+          echo "Fetching releases from GitHub..."
+          releases=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/hashicorp/terraform-provider-azurerm/releases" | jq -c '.[] | select(.tag_name >= "v3.0.0")')
+
+          # Process each release
+          echo "$releases" | while read -r release; do
+            tag_name=$(echo "$release" | jq -r '.tag_name')
+            tarball_url=$(echo "$release" | jq -r '.tarball_url')
+
+            # Skip if version already exists
+            if echo "$existing_versions" | grep -q "^$tag_name$"; then
+              echo "Skipping $tag_name - already exists"
+              continue
+            fi
+
+            echo "Processing $tag_name..."
+
+            # Download and extract release
+            temp_dir=$(mktemp -d)
+            curl -sL -H "Authorization: token $GITHUB_TOKEN" "$tarball_url" -o "$temp_dir/release.tar.gz"
+            tar -xzf "$temp_dir/release.tar.gz" -C "$temp_dir" --strip-components=1
+
+            # Create container with metadata
+            az storage container create \
+              --account-name $STORAGE_ACCOUNT \
+              --name "terraform-azure/$tag_name" \
+              --metadata \
+                  version=$tag_name \
+                  source="github.com/hashicorp/terraform-provider-azurerm" \
+                  processed_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+              --auth-mode login
+
+            # Upload docs
+            az storage blob upload-batch \
+              --account-name $STORAGE_ACCOUNT \
+              --destination "terraform-azure/$tag_name" \
+              --source "$temp_dir/website/docs" \
+              --auth-mode login
+
+            # Create metadata file
+            metadata_file="$temp_dir/metadata.json"
+            echo "{
+              \"version\": \"$tag_name\",
+              \"source\": \"github.com/hashicorp/terraform-provider-azurerm\",
+              \"processed_date\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
+              \"release_url\": \"https://github.com/hashicorp/terraform-provider-azurerm/releases/tag/$tag_name\"
+            }" > "$metadata_file"
+
+            # Upload metadata file
+            az storage blob upload \
+              --account-name $STORAGE_ACCOUNT \
+              --container-name "terraform-azure/$tag_name" \
+              --name "_metadata.json" \
+              --file "$metadata_file" \
+              --auth-mode login
+
+            # Cleanup
+            rm -rf "$temp_dir"
+            echo "Successfully uploaded $tag_name"
+          done
