@@ -39,7 +39,8 @@ jobs:
           existing_versions=$(az storage container list \
             --account-name $STORAGE_ACCOUNT \
             --query "[?starts_with(name, 'terraform-azure/v')].metadata.version" \
-            --output tsv)
+            --output tsv \
+            --auth-mode login)
 
           # Get all releases from GitHub API
           echo "Fetching releases from GitHub..."
