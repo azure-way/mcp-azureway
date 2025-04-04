@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Required for syncing
+          fetch-depth: 1 # Required for syncing
 
       - name: Sync fork with upstream
         uses: repo-sync/github-sync@v2
