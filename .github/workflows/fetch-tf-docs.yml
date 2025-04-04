@@ -59,7 +59,8 @@ jobs:
             fi
 
             echo "Processing $tag_name..."
-
+            echo "Downloading from $tarball_url"
+            
             # Download and extract release
             temp_dir=$(mktemp -d)
             curl -sL -H "Authorization: token $GITHUB_TOKEN" "$tarball_url" -o "$temp_dir/release.tar.gz"
