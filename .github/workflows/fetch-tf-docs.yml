@@ -66,16 +66,16 @@ jobs:
             curl -sL -H "Authorization: token $GITHUB_TOKEN" "$tarball_url" -o "$temp_dir/release.tar.gz"
             tar -xzf "$temp_dir/release.tar.gz" -C "$temp_dir" --strip-components=1
 
-            echo "Generating container..."
+            # echo "Generating container..."
             # Create container with metadata
-            az storage container create \
-              --account-name $STORAGE_ACCOUNT \
-              --name "terraform-azure/$tag_name" \
-              --metadata \
-                  version=$tag_name \
-                  source="github.com/hashicorp/terraform-provider-azurerm" \
-                  processed_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
-              --auth-mode login
+            # az storage container create \
+            #   --account-name $STORAGE_ACCOUNT \
+            #   --name "terraform-azure-$tag_name" \
+            #   --metadata \
+            #       version=$tag_name \
+            #       source="github.com/hashicorp/terraform-provider-azurerm" \
+            #       processed_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+            #   --auth-mode login
 
             echo "Uploading files to container..."
 
