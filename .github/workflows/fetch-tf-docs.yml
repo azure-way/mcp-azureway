@@ -60,12 +60,13 @@ jobs:
 
             echo "Processing $tag_name..."
             echo "Downloading from $tarball_url"
-            
+
             # Download and extract release
             temp_dir=$(mktemp -d)
             curl -sL -H "Authorization: token $GITHUB_TOKEN" "$tarball_url" -o "$temp_dir/release.tar.gz"
             tar -xzf "$temp_dir/release.tar.gz" -C "$temp_dir" --strip-components=1
 
+            echo "Generating container..."
             # Create container with metadata
             az storage container create \
               --account-name $STORAGE_ACCOUNT \
@@ -76,13 +77,17 @@ jobs:
                   processed_date=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
               --auth-mode login
 
-            # Upload docs
+            echo "Uploading files to container..."
+
+            # Generate docs
+            echo "Uploading docs to container..."
             az storage blob upload-batch \
               --account-name $STORAGE_ACCOUNT \
               --destination "terraform-azure/$tag_name" \
               --source "$temp_dir/website/docs" \
               --auth-mode login
 
+            echo "Metadata creation..."
             # Create metadata file
             metadata_file="$temp_dir/metadata.json"
             echo "{
@@ -92,6 +97,7 @@ jobs:
               \"release_url\": \"https://github.com/hashicorp/terraform-provider-azurerm/releases/tag/$tag_name\"
             }" > "$metadata_file"
 
+            echo "Uploading metadata file to container..."
             # Upload metadata file
             az storage blob upload \
               --account-name $STORAGE_ACCOUNT \
@@ -100,6 +106,7 @@ jobs:
               --file "$metadata_file" \
               --auth-mode login
 
+            echo "Uploading README file to container..."
             # Cleanup
             rm -rf "$temp_dir"
             echo "Successfully uploaded $tag_name"
