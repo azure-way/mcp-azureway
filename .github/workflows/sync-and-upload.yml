@@ -20,7 +20,7 @@ jobs:
       - name: Sync fork with upstream
         uses: repo-sync/github-sync@v2
         with:
-          source_repo: "MicrosoftDocs/azure-docs"
+          source_repo: "https://github.com/MicrosoftDocs/azure-docs.git"
           source_branch: "main"
           destination_branch: "main"
           github_token: ${{ secrets.GITHUB_TOKEN }}
