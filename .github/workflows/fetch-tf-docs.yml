@@ -31,12 +31,11 @@ jobs:
         run: |
           set -e # Exit immediately on error
 
-          # Get existing versions from container metadata
-          echo "Checking existing versions from container metadata..."
-          existing_versions=$(az storage container list \
+          # Check container metadata for version tags
+          echo "Checking container metadata for existing version tags..."
+          container_metadata=$(az storage container metadata show \
             --account-name $STORAGE_ACCOUNT \
-            --query "[?starts_with(name, 'terraform-azure/v')].metadata.version" \
-            --output tsv \
+            --name terraform-azure \
             --auth-mode login)
 
           # Get all releases from GitHub API
@@ -47,10 +46,13 @@ jobs:
           # Process each release
           echo "$releases" | while read -r release; do
             tag_name=$(echo "$release" | jq -r '.tag_name')
+            # Remove periods from tag_name for use in filenames and paths
+            clean_tag_name=$(echo "$tag_name" | tr -d '.')
+            echo "Using clean tag name: $clean_tag_name"
             tarball_url=$(echo "$release" | jq -r '.tarball_url')
 
-            # Skip if version already exists
-            if echo "$existing_versions" | grep -q "^$tag_name$"; then
+            # Skip if version already exists in either container list or metadata
+            if echo "$container_metadata" | jq -e --arg tag "$clean_tag_name" '.[$tag] == "added"' >/dev/null; then
               echo "Skipping $tag_name - already exists"
               continue
             fi
@@ -84,26 +86,13 @@ jobs:
               --source "$temp_dir/website/docs" \
               --auth-mode login
 
-            echo "Metadata creation..."
-            # Create metadata file
-            metadata_file="$temp_dir/metadata.json"
-            echo "{
-              \"version\": \"$tag_name\",
-              \"source\": \"github.com/hashicorp/terraform-provider-azurerm\",
-              \"processed_date\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\",
-              \"release_url\": \"https://github.com/hashicorp/terraform-provider-azurerm/releases/tag/$tag_name\"
-            }" > "$metadata_file"
-
-            echo "Uploading metadata file to container..."
-            # Upload metadata file
-            az storage blob upload \
+            # Update container metadata with new version
+            echo "Updating container metadata with version $tag_name"
+            az storage container metadata update \
               --account-name $STORAGE_ACCOUNT \
-              --container-name "terraform-azure/$tag_name" \
-              --name "_metadata.json" \
-              --file "$metadata_file" \
-              --auth-mode login
+              --name terraform-azure \
+              --metadata $clean_tag_name=added
 
-            echo "Uploading README file to container..."
             # Cleanup
             rm -rf "$temp_dir"
             echo "Successfully uploaded $tag_name"
